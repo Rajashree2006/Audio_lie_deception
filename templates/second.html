@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Analysis Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(ellipse at top, #1f3c88 0%, #020b1f 70%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      color: #fff;
+      padding: 30px 20px 60px;
+    }
+
+    .dashboard {
+      width: 100%;
+      max-width: 1000px;
+      background: linear-gradient(145deg, #182b50, #1e3460);
+      border-radius: 28px;
+      padding: 48px 40px;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.5);
+    }
+
+    h1 { text-align: center; color: #7aa2ff; font-size: 2rem; margin-bottom: 6px; }
+    .sub { text-align: center; color: #6a88c0; font-size: 0.9rem; margin-bottom: 36px; }
+
+    /* ── Top cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+    }
+    @media (max-width: 680px) { .cards { grid-template-columns: 1fr; } }
+
+    .card {
+      background: linear-gradient(145deg, #0f1c36, #14264a);
+      border-radius: 22px;
+      padding: 32px 24px;
+      text-align: center;
+      border: 1px solid rgba(122,162,255,0.12);
+      transition: transform 0.2s;
+    }
+    .card:hover { transform: translateY(-3px); }
+    .card-icon { font-size: 40px; margin-bottom: 12px; }
+    .card h2 { font-size: 1.25rem; margin-bottom: 10px; color: #c5d8ff; }
+    .card p  { color: #7a95c5; font-size: 0.88rem; line-height: 1.5; margin-bottom: 20px; }
+
+    .btn {
+      padding: 12px 28px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #2d6cdf, #1b4fb3);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      text-decoration: none;
+      display: inline-block;
+      box-shadow: 0 6px 18px rgba(45,108,223,0.35);
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(45,108,223,0.5); }
+    .btn:disabled { background: #2a3a5a; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed rgba(122,162,255,0.3);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: #2d6cdf;
+      background: rgba(45,108,223,0.07);
+    }
+    .upload-zone input[type="file"] { display: none; }
+    .upload-label { cursor: pointer; display: block; }
+    .upload-icon  { font-size: 26px; margin-bottom: 4px; }
+    .upload-text  { font-size: 0.84rem; color: #8fa8d8; }
+    .upload-hint  { font-size: 0.74rem; color: #5a78a8; margin-top: 3px; }
+    .file-name    { font-size: 0.82rem; color: #00ffcc; margin-top: 6px; min-height: 18px; }
+
+    /* ── Loading ── */
+    .loading { display: none; color: #7aa2ff; font-size: 0.88rem; margin: 10px 0; text-align: center; }
+    .loading.visible { display: block; }
+    .spinner { display: inline-block; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-msg { color: #ff6b6b; font-size: 0.86rem; margin-top: 8px; text-align: center; }
+
+    /* ── Result box ── */
+    .result-box {
+      display: none;
+      margin-top: 28px;
+      background: linear-gradient(145deg, #0d1b36, #121f40);
+      border-radius: 20px;
+      padding: 28px;
+      border: 1px solid rgba(122,162,255,0.15);
+    }
+    .result-box.visible { display: block; }
+
+    .result-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .verdict-badge {
+      font-size: 1.6rem;
+      font-weight: 800;
+      padding: 8px 22px;
+      border-radius: 50px;
+      letter-spacing: 1px;
+    }
+    .verdict-badge.truth      { background: rgba(0,229,160,0.15); color: #00e5a0; border: 2px solid #00e5a060; }
+    .verdict-badge.deception  { background: rgba(255,107,107,0.15); color: #ff6b6b; border: 2px solid #ff6b6b60; }
+
+    .prob-bars { flex: 1; min-width: 200px; }
+    .prob-bar-wrap { margin: 6px 0; }
+    .prob-label {
+      font-size: 0.78rem; color: #9ab0d8;
+      display: flex; justify-content: space-between;
+      margin-bottom: 3px;
+    }
+    .prob-bar-bg { background: rgba(255,255,255,0.07); border-radius: 6px; height: 10px; overflow: hidden; }
+    .prob-bar-fill { height: 100%; border-radius: 6px; transition: width 0.7s cubic-bezier(.4,0,.2,1); }
+    .prob-bar-fill.truth      { background: linear-gradient(90deg, #00c87a, #00ffcc); }
+    .prob-bar-fill.deception  { background: linear-gradient(90deg, #c0392b, #ff6b6b); }
+
+    /* ── Spectrogram tabs ── */
+    .spec-section { margin-top: 24px; }
+    .spec-section h3 { color: #7aa2ff; font-size: 1rem; margin-bottom: 14px; }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .tab-btn {
+      padding: 7px 18px;
+      border-radius: 8px;
+      border: 1px solid rgba(122,162,255,0.2);
+      background: transparent;
+      color: #8fa8d8;
+      font-size: 0.82rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn:hover  { border-color: #2d6cdf; color: #c5d8ff; }
+    .tab-btn.active { background: #2d6cdf; border-color: #2d6cdf; color: #fff; font-weight: 600; }
+
+    .spec-panel { display: none; }
+    .spec-panel.active { display: block; }
+
+    .spec-img-wrap {
+      background: #0d1826;
+      border-radius: 14px;
+      padding: 6px;
+      border: 1px solid rgba(122,162,255,0.1);
+      overflow: hidden;
+    }
+
+    .spec-img-wrap img {
+      width: 100%;
+      border-radius: 10px;
+      display: block;
+    }
+
+    .spec-caption {
+      font-size: 0.76rem;
+      color: #5a78a8;
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    .spec-loading {
+      text-align: center;
+      padding: 40px;
+      color: #6a88c0;
+      font-size: 0.88rem;
+    }
+
+    .back-link {
+      display: block;
+      text-align: center;
+      margin-top: 28px;
+      color: #5a78a8;
+      text-decoration: none;
+      font-size: 0.83rem;
+    }
+    .back-link:hover { color: #7aa2ff; }
+  </style>
+</head>
+<body>
+<div class="dashboard">
+  <h1>🔬 Analysis Dashboard</h1>
+  <p class="sub">Upload an audio file or record live to begin voice deception analysis</p>
+
+  <div class="cards">
+
+    <!-- ── LIVE AUDIO ─── -->
+    <div class="card">
+      <div class="card-icon">🎤</div>
+      <h2>Live Audio</h2>
+      <p>Record your voice in real-time using your microphone for instant analysis with spectrogram.</p>
+      <a href="/live" class="btn">Open Live Recording</a>
+    </div>
+
+    <!-- ── UPLOAD AUDIO ─── -->
+    <div class="card">
+      <div class="card-icon">📁</div>
+      <h2>Upload Audio File</h2>
+      <p>Upload a WAV, MP3, or M4A file and get a full analysis including 4 spectrograms.</p>
+
+      <div class="upload-zone" id="dropZone">
+        <label class="upload-label" for="audioInput">
+          <div class="upload-icon">☁️</div>
+          <div class="upload-text">Click to browse or drag & drop</div>
+          <div class="upload-hint">WAV · MP3 · M4A · OGG</div>
+          <div class="file-name" id="fileName"></div>
+        </label>
+        <input type="file" id="audioInput" accept=".wav,.mp3,.m4a,.ogg">
+      </div>
+
+      <button class="btn" id="analyzeBtn" disabled>Analyse Audio</button>
+      <div class="loading" id="loading"><span class="spinner">⏳</span> Extracting features & generating spectrograms…</div>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+
+  </div>
+
+  <!-- ── RESULT (full width below cards) ── -->
+  <div class="result-box" id="resultBox">
+
+    <div class="result-header">
+      <div class="verdict-badge" id="verdictBadge"></div>
+      <div class="prob-bars">
+        <div class="prob-bar-wrap">
+          <div class="prob-label"><span>✅ Truth</span><span id="truthPct">—</span></div>
+          <div class="prob-bar-bg"><div class="prob-bar-fill truth" id="truthBar" style="width:0%"></div></div>
+        </div>
+        <div class="prob-bar-wrap">
+          <div class="prob-label"><span>❌ Deception</span><span id="liePct">—</span></div>
+          <div class="prob-bar-bg"><div class="prob-bar-fill deception" id="lieBar" style="width:0%"></div></div>
+        </div>
+        <div id="modelUsed" style="font-size:0.74rem;color:#5a78a8;margin-top:8px;"></div>
+      </div>
+    </div>
+
+    <!-- Per-model breakdown -->
+    <div id="modelBreakdown" style="display:none;margin-bottom:16px;background:rgba(0,0,0,0.2);border-radius:12px;padding:14px;">
+      <div style="font-size:0.78rem;color:#7aa2ff;margin-bottom:10px;font-weight:600;">🔬 Per-Model Breakdown</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;" id="breakdownGrid"></div>
+    </div>
+
+    <!-- Spectrogram tabs -->
+    <div class="spec-section" id="specSection" style="display:none">
+      <h3>📊 Spectrograms</h3>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="combined">All (2×2)</button>
+        <button class="tab-btn" data-tab="waveform">Waveform</button>
+        <button class="tab-btn" data-tab="stft">STFT</button>
+        <button class="tab-btn" data-tab="mel">Mel</button>
+        <button class="tab-btn" data-tab="mfcc">MFCC</button>
+      </div>
+
+      <div class="spec-panel active" id="panel-combined">
+        <div class="spec-img-wrap"><img id="img-combined" src="" alt="Combined spectrogram"></div>
+        <div class="spec-caption">All four views in one panel</div>
+      </div>
+      <div class="spec-panel" id="panel-cnn_mel">
+        <div class="spec-img-wrap"><img id="img-cnn_mel" src="" alt="CNN Mel Spectrogram"></div>
+        <div class="spec-caption">Exact Mel spectrogram image fed into the CNN — 128 mel bins, magma colormap</div>
+      </div>
+      <div class="spec-panel" id="panel-waveform">
+        <div class="spec-img-wrap"><img id="img-waveform" src="" alt="Waveform"></div>
+        <div class="spec-caption">Raw amplitude over time</div>
+      </div>
+      <div class="spec-panel" id="panel-stft">
+        <div class="spec-img-wrap"><img id="img-stft" src="" alt="STFT Spectrogram"></div>
+        <div class="spec-caption">Short-Time Fourier Transform — frequency vs. time in dB</div>
+      </div>
+      <div class="spec-panel" id="panel-mel">
+        <div class="spec-img-wrap"><img id="img-mel" src="" alt="Mel Spectrogram"></div>
+        <div class="spec-caption">Mel-scale frequency — perceptually weighted</div>
+      </div>
+      <div class="spec-panel" id="panel-mfcc">
+        <div class="spec-img-wrap"><img id="img-mfcc" src="" alt="MFCCs"></div>
+        <div class="spec-caption">First 13 Mel-Frequency Cepstral Coefficients</div>
+      </div>
+    </div>
+
+  </div><!-- /result-box -->
+
+  <a href="/" class="back-link">← Back to home</a>
+</div>
+
+<script>
+  const input     = document.getElementById("audioInput");
+  const dropZone  = document.getElementById("dropZone");
+  const fileName  = document.getElementById("fileName");
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const loading   = document.getElementById("loading");
+  const resultBox = document.getElementById("resultBox");
+  const verdictBadge = document.getElementById("verdictBadge");
+  const truthPct  = document.getElementById("truthPct");
+  const liePct    = document.getElementById("liePct");
+  const truthBar  = document.getElementById("truthBar");
+  const lieBar    = document.getElementById("lieBar");
+  const errorMsg  = document.getElementById("errorMsg");
+  const specSection = document.getElementById("specSection");
+
+  // ── File input ──────────────────────────────────────────────────────────
+  input.addEventListener("change", () => {
+    if (input.files[0]) { fileName.textContent = input.files[0].name; analyzeBtn.disabled = false; }
+  });
+
+  dropZone.addEventListener("dragover",  e => { e.preventDefault(); dropZone.classList.add("drag-over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault(); dropZone.classList.remove("drag-over");
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
+      fileName.textContent = file.name; analyzeBtn.disabled = false;
+    }
+  });
+
+  // ── Analyse button ──────────────────────────────────────────────────────
+  analyzeBtn.addEventListener("click", async () => {
+    if (!input.files[0]) return;
+    errorMsg.textContent = "";
+    resultBox.classList.remove("visible");
+    specSection.style.display = "none";
+    loading.classList.add("visible");
+    analyzeBtn.disabled = true;
+
+    const formData = new FormData();
+    formData.append("audio", input.files[0]);
+
+    try {
+      const resp = await fetch("/predict", { method: "POST", body: formData });
+      const data = await resp.json();
+      loading.classList.remove("visible");
+      analyzeBtn.disabled = false;
+
+      if (data.error) { errorMsg.textContent = "⚠ " + data.error; return; }
+
+      showResult(data);
+
+    } catch {
+      loading.classList.remove("visible");
+      analyzeBtn.disabled = false;
+      errorMsg.textContent = "⚠ Server error. Is Flask running?";
+    }
+  });
+
+  // ── Show result ─────────────────────────────────────────────────────────
+  function showResult(data) {
+    const label  = data.result || "unknown";
+    const truthP = (data.truth_probability * 100).toFixed(1);
+    const lieP   = (data.lie_probability   * 100).toFixed(1);
+    const isTruth = label.toLowerCase().includes("truth");
+
+    verdictBadge.textContent = label.charAt(0).toUpperCase() + label.slice(1);
+    verdictBadge.className   = "verdict-badge " + (isTruth ? "truth" : "deception");
+
+    truthPct.textContent = truthP + "%";
+    liePct.textContent   = lieP   + "%";
+    setTimeout(() => { truthBar.style.width = truthP + "%"; lieBar.style.width = lieP + "%"; }, 60);
+
+    // Model used
+    const modelUsedEl = document.getElementById("modelUsed");
+    if (modelUsedEl && data.model_used) modelUsedEl.textContent = "Model: " + data.model_used;
+
+    // Per-model breakdown
+    const breakdown = document.getElementById("modelBreakdown");
+    const grid      = document.getElementById("breakdownGrid");
+    if (breakdown && grid) {
+      grid.innerHTML = "";
+      const models = [];
+      if (data.xgb_truth !== undefined) models.push({ name: "🌲 XGBoost", truth: data.xgb_truth, lie: data.xgb_lie });
+      if (data.cnn_truth !== undefined) models.push({ name: "🧠 CNN",     truth: data.cnn_truth, lie: data.cnn_lie });
+      if (models.length > 0) {
+        models.forEach(m => {
+          grid.innerHTML += `<div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:10px;">
+            <div style="font-size:0.78rem;color:#c5d8ff;margin-bottom:6px;">${m.name}</div>
+            <div style="font-size:0.72rem;color:#00e5a0;">✅ Truth: ${m.truth}%</div>
+            <div style="font-size:0.72rem;color:#ff6b6b;">❌ Lie: ${m.lie}%</div>
+          </div>`;
+        });
+        breakdown.style.display = "block";
+      }
+    }
+
+    // Spectrograms
+    if (data.spectrograms && Object.keys(data.spectrograms).length > 0) {
+      const s = data.spectrograms;
+      if (s.combined) document.getElementById("img-combined").src = s.combined;
+      if (s.cnn_mel)  document.getElementById("img-cnn_mel").src  = s.cnn_mel;
+      if (s.waveform) document.getElementById("img-waveform").src = s.waveform;
+      if (s.stft)     document.getElementById("img-stft").src     = s.stft;
+      if (s.mel)      document.getElementById("img-mel").src       = s.mel;
+      if (s.mfcc)     document.getElementById("img-mfcc").src     = s.mfcc;
+      specSection.style.display = "block";
+    }
+
+    resultBox.classList.add("visible");
+    resultBox.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  // ── Tabs ─────────────────────────────────────────────────────────────────
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".spec-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("panel-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Live Audio Recording</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: "Segoe UI", sans-serif;
+      background: radial-gradient(ellipse at top, #1f3c88, #020b1f);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .container {
+      background: linear-gradient(145deg, #182b50, #1e3460);
+      padding: 48px 40px;
+      border-radius: 28px;
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+      box-shadow: 0 30px 60px rgba(0,0,0,0.55);
+      border: 1px solid rgba(122,162,255,0.12);
+    }
+
+    h1 { color: #7aa2ff; font-size: 1.7rem; margin-bottom: 8px; }
+    .sub { color: #6a88c0; font-size: 0.88rem; margin-bottom: 32px; }
+
+    /* Waveform visualizer */
+    .visualizer {
+      width: 100%;
+      height: 64px;
+      margin-bottom: 24px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.2);
+      overflow: hidden;
+    }
+
+    canvas { width: 100%; height: 100%; }
+
+    /* Record button */
+    .record-btn {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.15);
+      cursor: pointer;
+      font-size: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .record-btn.idle {
+      background: linear-gradient(135deg, #2d6cdf, #1b4fb3);
+      box-shadow: 0 8px 24px rgba(45,108,223,0.45);
+    }
+
+    .record-btn.recording {
+      background: linear-gradient(135deg, #c0392b, #e74c3c);
+      box-shadow: 0 8px 24px rgba(231,76,60,0.55);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+
+    .record-btn:hover { transform: scale(1.06); }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 8px 24px rgba(231,76,60,0.55); }
+      50%       { box-shadow: 0 12px 36px rgba(231,76,60,0.8); }
+    }
+
+    .record-hint { font-size: 0.82rem; color: #6a88c0; margin-bottom: 8px; }
+
+    .timer {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #00ffcc;
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 24px;
+    }
+
+    .stop-btn {
+      padding: 12px 28px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #e74c3c, #c0392b);
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: none;
+      margin: 0 auto 20px;
+      box-shadow: 0 6px 18px rgba(231,76,60,0.4);
+      transition: transform 0.2s;
+    }
+
+    .stop-btn.visible { display: inline-block; }
+    .stop-btn:hover { transform: translateY(-2px); }
+
+    .status { font-size: 0.85rem; color: #8fa8d8; margin-bottom: 8px; }
+
+    /* Result */
+    .result-box {
+      margin-top: 24px;
+      padding: 20px;
+      border-radius: 16px;
+      background: rgba(0,0,0,0.25);
+      display: none;
+    }
+
+    .result-box.visible { display: block; }
+
+    .prediction-label { font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; }
+    .prediction-label.truth { color: #00e5a0; }
+    .prediction-label.deception { color: #ff6b6b; }
+
+    .prob-bar-wrap { margin: 8px 0; text-align: left; }
+    .prob-label { font-size: 0.8rem; color: #9ab0d8; margin-bottom: 4px; display: flex; justify-content: space-between; }
+    .prob-bar-bg { background: rgba(255,255,255,0.08); border-radius: 6px; height: 10px; overflow: hidden; }
+    .prob-bar-fill { height: 100%; border-radius: 6px; transition: width 0.6s ease; }
+    .prob-bar-fill.truth { background: linear-gradient(90deg, #00c87a, #00ffcc); }
+    .prob-bar-fill.lie { background: linear-gradient(90deg, #c0392b, #ff6b6b); }
+
+    .error-msg { color: #ff6b6b; font-size: 0.88rem; }
+
+    .back-link {
+      display: block;
+      margin-top: 28px;
+      color: #5a78a8;
+      text-decoration: none;
+      font-size: 0.82rem;
+    }
+
+    .back-link:hover { color: #7aa2ff; }
+
+    /* ── Spectrogram section ── */
+    .spec-section { margin-top: 20px; text-align: left; }
+    .spec-section h3 { color: #7aa2ff; font-size: 0.95rem; margin-bottom: 12px; }
+    .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tab-btn {
+      padding: 6px 14px; border-radius: 8px;
+      border: 1px solid rgba(122,162,255,0.2);
+      background: transparent; color: #8fa8d8;
+      font-size: 0.78rem; cursor: pointer; transition: all 0.2s;
+    }
+    .tab-btn:hover  { border-color: #2d6cdf; color: #c5d8ff; }
+    .tab-btn.active { background: #2d6cdf; border-color: #2d6cdf; color: #fff; font-weight: 600; }
+    .spec-panel { display: none; }
+    .spec-panel.active { display: block; }
+    .spec-img-wrap {
+      background: #0d1826; border-radius: 12px;
+      padding: 5px; border: 1px solid rgba(122,162,255,0.1); overflow: hidden;
+    }
+    .spec-img-wrap img { width: 100%; border-radius: 8px; display: block; }
+    .spec-caption { font-size: 0.72rem; color: #5a78a8; margin-top: 6px; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>🎙 Live Recording</h1>
+  <p class="sub">Press the microphone to start. Speak clearly, then stop when done.</p>
+
+  <div class="visualizer">
+    <canvas id="waveCanvas"></canvas>
+  </div>
+
+  <div class="timer" id="timer">00:00</div>
+
+  <div class="record-btn idle" id="recordBtn" title="Start recording">🎤</div>
+  <div class="record-hint" id="recordHint">Click to start</div>
+
+  <button class="stop-btn" id="stopBtn">⏹ Stop & Analyse</button>
+
+  <div class="status" id="status"></div>
+  <div class="error-msg" id="errorMsg"></div>
+
+  <div class="result-box" id="resultBox">
+    <div class="prediction-label" id="predLabel"></div>
+    <div class="prob-bar-wrap">
+      <div class="prob-label"><span>✅ Truth</span><span id="truthPct">—</span></div>
+      <div class="prob-bar-bg"><div class="prob-bar-fill truth" id="truthBar" style="width:0%"></div></div>
+    </div>
+    <div class="prob-bar-wrap">
+      <div class="prob-label"><span>❌ Deception</span><span id="liePct">—</span></div>
+      <div class="prob-bar-bg"><div class="prob-bar-fill lie" id="lieBar" style="width:0%"></div></div>
+    </div>
+    <div id="liveModelUsed" style="font-size:0.74rem;color:#5a78a8;margin-top:8px;"></div>
+
+    <div class="spec-section" id="liveSpecSection" style="display:none">
+      <h3>📊 Spectrograms</h3>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="combined">All (2×2)</button>
+        <button class="tab-btn" data-tab="waveform">Waveform</button>
+        <button class="tab-btn" data-tab="stft">STFT</button>
+        <button class="tab-btn" data-tab="mel">Mel</button>
+        <button class="tab-btn" data-tab="mfcc">MFCC</button>
+      </div>
+      <div class="spec-panel active" id="lpanel-combined">
+        <div class="spec-img-wrap"><img id="limg-combined" src="" alt="Combined"></div>
+        <div class="spec-caption">All four CNN feature maps in one panel</div>
+      </div>
+      <div class="spec-panel" id="lpanel-cnn_mel">
+        <div class="spec-img-wrap"><img id="limg-cnn_mel" src="" alt="CNN Mel"></div>
+        <div class="spec-caption">Exact Mel spectrogram fed into the CNN</div>
+      </div>
+      <div class="spec-panel" id="lpanel-waveform">
+        <div class="spec-img-wrap"><img id="limg-waveform" src="" alt="Waveform"></div>
+        <div class="spec-caption">Raw amplitude over time</div>
+      </div>
+      <div class="spec-panel" id="lpanel-stft">
+        <div class="spec-img-wrap"><img id="limg-stft" src="" alt="STFT"></div>
+        <div class="spec-caption">Short-Time Fourier Transform — frequency vs time (dB)</div>
+      </div>
+      <div class="spec-panel" id="lpanel-mel">
+        <div class="spec-img-wrap"><img id="limg-mel" src="" alt="Mel"></div>
+        <div class="spec-caption">Mel-scale — perceptually weighted frequency</div>
+      </div>
+      <div class="spec-panel" id="lpanel-mfcc">
+        <div class="spec-img-wrap"><img id="limg-mfcc" src="" alt="MFCC"></div>
+        <div class="spec-caption">First 20 Mel-Frequency Cepstral Coefficients</div>
+      </div>
+    </div>
+  </div>
+
+  <a href="/second" class="back-link">← Back to Dashboard</a>
+</div>
+
+<script>
+  let mediaRecorder, audioChunks = [], timerInterval, audioCtx, analyser, animFrame;
+  let isRecording = false;
+
+  const recordBtn = document.getElementById("recordBtn");
+  const stopBtn   = document.getElementById("stopBtn");
+  const status    = document.getElementById("status");
+  const timerEl   = document.getElementById("timer");
+  const resultBox = document.getElementById("resultBox");
+  const predLabel = document.getElementById("predLabel");
+  const truthPct  = document.getElementById("truthPct");
+  const liePct    = document.getElementById("liePct");
+  const truthBar  = document.getElementById("truthBar");
+  const lieBar    = document.getElementById("lieBar");
+  const errorMsg  = document.getElementById("errorMsg");
+  const canvas    = document.getElementById("waveCanvas");
+  const ctx       = canvas.getContext("2d");
+  const hint      = document.getElementById("recordHint");
+
+  // ── Canvas sizing
+  function resizeCanvas() {
+    canvas.width  = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+  }
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas);
+
+  // ── Waveform draw
+  function drawWave() {
+    if (!analyser) return;
+    animFrame = requestAnimationFrame(drawWave);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(buf);
+    resizeCanvas();
+    ctx.fillStyle = "rgba(0,0,0,0)";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "#2d6cdf";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    const sliceW = canvas.width / buf.length;
+    let x = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = buf[i] / 128;
+      const y = (v * canvas.height) / 2;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      x += sliceW;
+    }
+    ctx.stroke();
+  }
+
+  function drawFlat() {
+    resizeCanvas();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = "rgba(45,108,223,0.3)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height / 2);
+    ctx.lineTo(canvas.width, canvas.height / 2);
+    ctx.stroke();
+  }
+  drawFlat();
+
+  // ── Timer
+  let startTime;
+  function startTimer() {
+    startTime = Date.now();
+    timerInterval = setInterval(() => {
+      const s = Math.floor((Date.now() - startTime) / 1000);
+      timerEl.textContent =
+        String(Math.floor(s / 60)).padStart(2, "0") + ":" +
+        String(s % 60).padStart(2, "0");
+    }, 500);
+  }
+
+  // ── Record button click
+  recordBtn.addEventListener("click", async () => {
+    if (isRecording) return;
+    errorMsg.textContent = "";
+    resultBox.classList.remove("visible");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Waveform analyser
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      audioCtx.createMediaStreamSource(stream).connect(analyser);
+      drawWave();
+
+      // Recorder — try WAV-compatible codec
+      let opts = {};
+      if (MediaRecorder.isTypeSupported("audio/wav")) opts = { mimeType: "audio/wav" };
+      else if (MediaRecorder.isTypeSupported("audio/webm;codecs=pcm")) opts = { mimeType: "audio/webm;codecs=pcm" };
+
+      mediaRecorder = new MediaRecorder(stream, opts);
+      audioChunks   = [];
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+      mediaRecorder.onstop = sendAudio;
+      mediaRecorder.start(250);   // collect in 250 ms chunks
+
+      isRecording = true;
+      startTimer();
+      recordBtn.classList.replace("idle", "recording");
+      recordBtn.textContent = "⏺";
+      hint.textContent = "Recording…";
+      stopBtn.classList.add("visible");
+      status.textContent = "";
+
+    } catch {
+      errorMsg.textContent = "⚠ Microphone access denied.";
+    }
+  });
+
+  // ── Stop button
+  stopBtn.addEventListener("click", () => {
+    if (!isRecording) return;
+    mediaRecorder.stop();
+    cancelAnimationFrame(animFrame);
+    clearInterval(timerInterval);
+    isRecording = false;
+    recordBtn.classList.replace("recording", "idle");
+    recordBtn.textContent = "🎤";
+    hint.textContent = "Click to start";
+    stopBtn.classList.remove("visible");
+    status.textContent = "⏳ Analysing…";
+    drawFlat();
+    if (audioCtx) audioCtx.close();
+  });
+
+  // ── Send to backend
+ async function sendAudio() {
+  const mimeType = mediaRecorder.mimeType || "audio/webm";
+  const blob = new Blob(audioChunks, { type: mimeType });
+
+  // Convert to WAV using AudioContext (works in all browsers)
+  status.textContent = "⏳ Converting audio…";
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioContext = new AudioContext({ sampleRate: 22050 }); // match your SR=22050
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+  // Encode to WAV
+  const wavBlob = audioBufferToWav(audioBuffer);
+
+  const formData = new FormData();
+  formData.append("audio", wavBlob, "live_recording.wav");  // now actually WAV
+
+  status.textContent = "⏳ Analysing…";
+  try {
+    const resp = await fetch("/predict-live", { method: "POST", body: formData });
+    const data = await resp.json();
+    status.textContent = "";
+    if (data.error) { errorMsg.textContent = "⚠ " + data.error; return; }
+    showResult(data);
+  } catch {
+    status.textContent = "";
+    errorMsg.textContent = "⚠ Server error. Is Flask running?";
+  }
+}
+
+// WAV encoder — no library needed
+function audioBufferToWav(buffer) {
+  const numChannels = 1;  // mono — matches your CNN's mono=True
+  const sampleRate = buffer.sampleRate;
+  const samples = buffer.getChannelData(0);  // take channel 0 only → mono
+  const dataLength = samples.length * 2;     // 16-bit = 2 bytes per sample
+  const wavBuffer = new ArrayBuffer(44 + dataLength);
+  const view = new DataView(wavBuffer);
+
+  function writeStr(offset, str) {
+    for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+  }
+
+  writeStr(0, "RIFF");
+  view.setUint32(4, 36 + dataLength, true);
+  writeStr(8, "WAVE");
+  writeStr(12, "fmt ");
+  view.setUint32(16, 16, true);          // PCM chunk size
+  view.setUint16(20, 1, true);           // PCM format
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);  // byte rate
+  view.setUint16(32, 2, true);               // block align
+  view.setUint16(34, 16, true);              // bits per sample
+  writeStr(36, "data");
+  view.setUint32(40, dataLength, true);
+
+  // Write PCM samples as 16-bit integers
+  let offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+
+  return new Blob([wavBuffer], { type: "audio/wav" });
+}
+
+  // ── Show result ──────────────────────────────────────────────────────────
+  function showResult(data) {
+    resultBox.classList.add("visible");
+
+    const isLie = data.result === "Lie";
+    predLabel.textContent = isLie ? "❌ Deception Detected" : "✅ Truth Detected";
+    predLabel.className = "prediction-label " + (isLie ? "deception" : "truth");
+
+    const tp = (data.truth_percent || 0).toFixed(1);
+    const lp = (data.lie_percent   || 0).toFixed(1);
+    truthPct.textContent = tp + "%";
+    liePct.textContent   = lp + "%";
+    truthBar.style.width = tp + "%";
+    lieBar.style.width   = lp + "%";
+
+    const modelEl = document.getElementById("liveModelUsed");
+    if (modelEl && data.model_used) modelEl.textContent = "Model: " + data.model_used;
+
+    // Spectrograms
+    const specs = data.spectrograms || {};
+    if (data.cnn_mel) specs.cnn_mel = data.cnn_mel;
+    const keys = ["combined", "cnn_mel", "waveform", "stft", "mel", "mfcc"];
+    let hasAny = false;
+    keys.forEach(k => {
+      const img = document.getElementById("limg-" + k);
+      if (img && specs[k]) { img.src = specs[k]; hasAny = true; }
+    });
+    const specSection = document.getElementById("liveSpecSection");
+    if (specSection) specSection.style.display = hasAny ? "block" : "none";
+  }
+
+  // ── Spectrogram tabs ──────────────────────────────────────────────────────
+  document.querySelectorAll(".tab-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const parent = btn.closest(".spec-section");
+      parent.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      parent.querySelectorAll(".spec-panel").forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      const panel = parent.querySelector("#lpanel-" + tab);
+      if (panel) panel.classList.add("active");
+    });
+  });
+</script>
+</body>
+</html>

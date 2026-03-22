@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Prediction Result</title>
+</head>
+<body>
+
+    <h1>Prediction Result</h1>
+
+    <h2>Result: {{ result }}</h2>
+
+    <p>Truth Probability: {{ truth_probability }}%</p>
+    <p>Lie Probability: {{ lie_probability }}%</p>
+
+    <h3>Spectrogram</h3>
+    <img src="{{ url_for('uploaded_file', filename=spectrogram) }}" width="600">
+
+    <br><br>
+    <a href="/">Go Back</a>
+
+</body>
+</html>
